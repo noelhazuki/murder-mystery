@@ -554,6 +554,16 @@
     return res.json();
   }
 
+  async function apiPut(path, body) {
+    const res = await fetch(API_BASE + path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('更新に失敗しました(' + res.status + ')');
+    return res.json();
+  }
+
   async function loadScenarios() {
     const data = await apiGet('/api/scenarios');
     return extractList(data);
@@ -609,8 +619,31 @@
     });
 
     slot.querySelectorAll('.scenario-rename-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        alert('リネーム機能は準備中です。もうすぐ使えるようになります。');
+      btn.addEventListener('click', async () => {
+        const target = scenarios.find(s => s.id === btn.dataset.rename);
+        if (!target) return;
+        const newTitle = window.prompt('新しいシナリオ名を入力してください', target.title || '');
+        if (newTitle === null) return; // キャンセル
+        const trimmed = newTitle.trim();
+        if (!trimmed) {
+          showModalError('シナリオ名を空にはできません');
+          return;
+        }
+        btn.disabled = true;
+        showModalError('');
+        try {
+          await apiPut('/api/scenarios/' + encodeURIComponent(target.id), { title: trimmed });
+          scenarios = await loadScenarios();
+          renderScenarioList();
+          if (currentScenario && currentScenario.id === target.id) {
+            const updated = scenarios.find(s => s.id === target.id);
+            if (updated) setCurrentScenario(updated);
+          }
+        } catch (e) {
+          showModalError(e.message);
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
   }
