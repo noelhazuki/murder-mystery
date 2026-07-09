@@ -578,7 +578,30 @@
     if (!res.ok) throw new Error('削除に失敗しました(' + res.status + ')');
     return res.json();
   }
+async function handleSave() {
+  const textarea = document.querySelector('.input-page textarea');
+  const saveBtn = document.querySelector('.input-page .save-btn');
+  const text = textarea.value.trim();
+  if (!text || !currentScenario) return;
 
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中…';
+  try {
+    await apiPost('/api/classify', { scenario_id: currentScenario.id, text });
+    textarea.value = '';
+    saveBtn.textContent = '保存しました';
+  } catch (e) {
+    saveBtn.textContent = '保存に失敗しました';
+    console.error(e);
+  } finally {
+    setTimeout(() => {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存する';
+    }, 1500);
+  }
+}
+
+document.querySelector('.input-page .save-btn').addEventListener('click', handleSave);
   async function loadScenarios() {
     const data = await apiGet('/api/scenarios');
     return extractList(data);
