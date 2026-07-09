@@ -22,5 +22,6 @@ CREATE TABLE IF NOT EXISTS entries (
                                   --   evidence: unchecked / checked_empty / checked_found
   chapter INTEGER,               -- 時系列の章グループ用
   starred INTEGER DEFAULT 0,     -- お気に入り(0/1)
+  deceased INTEGER DEFAULT 0,    -- 死亡確定フラグ(0/1) personカテゴリのみ意味を持つ。確定事実になった時だけ1にする
   updated_at TEXT
 );
