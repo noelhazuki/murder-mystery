@@ -39,6 +39,10 @@ export default {
       if (path === "/api/scenarios" && method === "GET") return await listScenarios(env);
       if (path === "/api/scenarios" && method === "POST") return await createScenario(env, request);
 
+      const scenarioMatch = path.match(/^\/api\/scenarios\/([^/]+)$/);
+      if (scenarioMatch && method === "PUT") return await updateScenario(env, scenarioMatch[1], request);
+      if (scenarioMatch && method === "DELETE") return await deleteScenario(env, scenarioMatch[1]);
+
       // --- エントリー(証拠/人物/場所/推理/事実/未解決 共通) ---
       if (path === "/api/entries" && method === "GET") return await listEntries(env, url);
       if (path === "/api/entries" && method === "POST") return await upsertEntries(env, request);
@@ -75,6 +79,22 @@ async function createScenario(env, request) {
     `INSERT INTO scenarios (id, title, created_at) VALUES (?, ?, ?)`
   ).bind(id, title, nowIso()).run();
   return json({ ok: true, id, title });
+}
+
+async function updateScenario(env, id, request) {
+  const body = await request.json();
+  if (!body.title) return json({ error: "title required" }, 400);
+  await env.DB.prepare(
+    `UPDATE scenarios SET title = ? WHERE id = ?`
+  ).bind(body.title, id).run();
+  return json({ ok: true, id, title: body.title });
+}
+
+async function deleteScenario(env, id) {
+  // シナリオ本体と、紐づくentriesを両方削除
+  await env.DB.prepare(`DELETE FROM entries WHERE scenario_id = ?`).bind(id).run();
+  await env.DB.prepare(`DELETE FROM scenarios WHERE id = ?`).bind(id).run();
+  return json({ ok: true, id });
 }
 
 // ---------- エントリー ----------
