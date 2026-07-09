@@ -200,9 +200,10 @@ function buildClassifyPrompt(scenarioId, existingEntries) {
 1. 1つの事項につき1エントリーに分割する。複数の事項を1エントリーにまとめない。
 2. 既存entries一覧(下記)に同一の事項があれば、その既存のidをそのまま使う(新規idは発行しない)。新規事項の場合はidを省略する(サーバー側で自動採番される)。
 3. parent_idは、既存entries一覧に該当する親が実在する場合のみ設定する。親が存在するかどうか推測で新規に作らない。存在しなければnullにする。
-4. statusはcategoryがlocationまたはevidenceの場合のみ設定する。
+4. statusはcategoryがlocation・evidence・personの場合のみ設定する。
    - location: "unchecked" または "checked"
    - evidence: "unchecked" または "checked_empty" または "checked_found"
+   - person: "unchecked" または "checked_no_info" または "checked_found"
    - それ以外のcategoryではstatusは必ずnullにする。
 5. chapterは既存entriesの最大値(現在:${maxChapter})を基準にする。テキスト中に明確な章・場面の転換点がある場合のみ+1し、それ以外は既存の最大値をそのまま使う。
 6. bodyにはテキストの要約のみを書く。他のentryとの関連性の推測や示唆(例:「これは〇〇の伏線かもしれない」等)は絶対に書かない。プレイヤーの推理を妨げないこと。
@@ -215,7 +216,7 @@ ${existingList}
 【出力形式】
 以下のJSON形式のみを出力すること。前置き文・説明文・Markdownのコードブロック記号(\`\`\`)は一切つけないこと。
 
-{"entries": [{"id": "(既存の場合のみ)", "scenario_id": "${scenarioId}", "category": "evidence|person|location|reasoning|fact|question", "title": "短いタイトル", "body": "要約本文", "parent_id": "(あれば)", "status": "(evidence/locationのみ)", "chapter": 数値, "deceased": "(personのみ。0または1。死亡が確定事実の場合のみ1)"}]}`;
+{"entries": [{"id": "(既存の場合のみ)", "scenario_id": "${scenarioId}", "category": "evidence|person|location|reasoning|fact|question", "title": "短いタイトル", "body": "要約本文", "parent_id": "(あれば)","status": "(evidence/location/personのみ)", "chapter": 数値, "deceased": "(personのみ。0または1。死亡が確定事実の場合のみ1)"}]}`;
 }
 
 async function handleClassify(env, request) {
