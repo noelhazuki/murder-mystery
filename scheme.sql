@@ -1,39 +1,29 @@
 -- ===================================
--- AIマーダーミステリー 事件簿管理DB
+-- マダミス事件簿管理DB (entries方式)
 -- ===================================
 
 -- シナリオ本体
 CREATE TABLE IF NOT EXISTS scenarios (
   id TEXT PRIMARY KEY,
-  title TEXT,
-  intro TEXT,              -- 導入
-  win_condition TEXT,      -- 勝利条件
-  current_phase TEXT,      -- 探索2日目/裁判前/第3章 など
-  victim TEXT,             -- 被害者
-  incident_summary TEXT,   -- 事件内容
-  created_at TEXT,
-  updated_at TEXT
-);
-
--- プレイログ（セーブ画面の内容）
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY,
-  scenario_id TEXT,
-  session_name TEXT,
-  played_at TEXT,
-  phase TEXT,
-  discovered TEXT,          -- 今回判明した事
-  new_testimony TEXT,       -- 新しい証言
-  obtained_files TEXT,      -- JSON配列(file_id)
-  suspicious_points TEXT,   -- 怪しい点
-  ai_summary TEXT,          -- 次回AIに読ませる要約(手動メモ欄)
+  title TEXT NOT NULL,
   created_at TEXT
 );
 
--- 登場人物
-CREATE TABLE IF NOT EXISTS characters (
-  id TEXT PRIMARY KEY,
-  scenario_id TEXT,
+-- 全カテゴリ共通の記録テーブル
+CREATE TABLE IF NOT EXISTS entries (
+  id TEXT PRIMARY KEY,          -- 例: E-001, P-003
+  scenario_id TEXT NOT NULL,
+  category TEXT NOT NULL,       -- evidence / person / location / reasoning / fact / question
+  title TEXT NOT NULL,
+  body TEXT,
+  parent_id TEXT,                -- 入れ子構造用(例: 書斎→机→引き出し)
+  status TEXT,                   -- locationとevidenceのみ使用
+                                  --   location: unchecked / checked
+                                  --   evidence: unchecked / checked_empty / checked_found
+  chapter INTEGER,               -- 時系列の章グループ用
+  starred INTEGER DEFAULT 0,     -- お気に入り(0/1)
+  updated_at TEXT
+);
   name TEXT,
   role TEXT,                -- 被害者/容疑者/参考人
   profile TEXT,
