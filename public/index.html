@@ -286,7 +286,7 @@
   }
   .cat-item-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
   .cat-item-related { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; }
-  .cat-item-related .auto-link {
+  .auto-link {
     color: var(--accent-deep);
     font-weight: 700;
     text-decoration: underline;
@@ -294,8 +294,8 @@
     text-underline-offset: 2px;
     cursor: pointer;
   }
-  .cat-item-related .auto-link:active { opacity: 0.6; }
-  .cat-item.flash { animation: catItemFlash 1.2s ease; }
+  .auto-link:active { opacity: 0.6; }
+  .cat-item.flash, .memo-card.flash { animation: catItemFlash 1.2s ease; }
   @keyframes catItemFlash {
     0% { background: #D8E0F5; }
     100% { background: #FBF8EE; }
@@ -561,10 +561,19 @@
     return div.innerHTML;
   }
 
+  // 名前候補は「カテゴリ別ビュー用」「時系列ビュー用」どちらか片方しか読み込まれていなくても
+  // リンクが効くように、両方のキャッシュをマージして参照する
+  function allKnownEntries() {
+    const map = new Map();
+    entriesCache.forEach(e => map.set(e.id, e));
+    timelineEntries.forEach(e => map.set(e.id, e));
+    return Array.from(map.values());
+  }
+
   // DB登録済みの名前だけをクリッカブルにする(未登録の単語は平文のまま)
   function autoLinkText(text, excludeId) {
     if (!text) return '';
-    const candidates = entriesCache
+    const candidates = allKnownEntries()
       .filter(e => e.id !== excludeId && e.title && e.title.trim().length > 0)
       .sort((a, b) => b.title.length - a.title.length); // 長い名前を優先(部分一致の衝突防止)
 
@@ -724,7 +733,7 @@
 
       const cards = items.map(e => {
         const followups = descendantsOf(e.id).map(c => `
-          <div class="memo-followup">${formatDateTime(c.updated_at)}追記:${escapeHtml(c.body || c.title)}</div>
+          <div class="memo-followup" data-id="${c.id}">${formatDateTime(c.updated_at)}追記:${autoLinkText(c.body || c.title, c.id)}</div>
         `).join('');
 
         return `
@@ -734,7 +743,7 @@
               <button class="memo-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
             </div>
             <div class="memo-body">
-              <strong>${escapeHtml(e.title)}</strong>${e.body ? '<br>' + escapeHtml(e.body) : ''}
+              <strong>${escapeHtml(e.title)}</strong>${e.body ? '<br>' + autoLinkText(e.body, e.id) : ''}
             </div>
             ${followups}
             <button class="followup-add" data-id="${e.id}">+ 追記する</button>
@@ -755,6 +764,19 @@
     // 追記ボタン
     slot.querySelectorAll('.followup-add').forEach(btn => {
       btn.addEventListener('click', () => showFollowupInput(btn));
+    });
+
+    // 自動リンクのタップ:同じ時系列内の該当カード(または追記)までスクロール&ハイライト
+    slot.querySelectorAll('.auto-link').forEach(link => {
+      link.addEventListener('click', () => {
+        const targetId = link.dataset.id;
+        const target = slot.querySelector(`.memo-card[data-id="${targetId}"], .memo-followup[data-id="${targetId}"]`);
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const flashTarget = target.closest('.memo-card') || target;
+        flashTarget.classList.add('flash');
+        setTimeout(() => flashTarget.classList.remove('flash'), 1200);
+      });
     });
   }
 
@@ -871,6 +893,23 @@
     if (!res.ok) throw new Error('削除に失敗しました(' + res.status + ')');
     return res.json();
   }
+// テキストが「entries形式のJSON」かどうかを判定する。そうであれば配列を返し、違えばnullを返す
+// (APIキー切れ等でAI分類が使えない時、クロウくんが手作りしたJSONをそのまま貼って保存するための代替ルート)
+function tryParseEntriesJson(text) {
+  const trimmed = text.trim();
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (e) {
+    return null;
+  }
+  const entries = Array.isArray(parsed) ? parsed : parsed.entries;
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  const looksValid = entries.every(e => e && typeof e === 'object' && e.category && e.title);
+  return looksValid ? entries : null;
+}
+
 async function handleSave() {
   const textarea = document.querySelector('.input-page textarea');
   const saveBtn = document.querySelector('.input-page .save-btn');
@@ -878,9 +917,16 @@ async function handleSave() {
   if (!text || !currentScenario) return;
 
   saveBtn.disabled = true;
-  saveBtn.textContent = '保存中…';
+  const entriesJson = tryParseEntriesJson(text);
+  saveBtn.textContent = entriesJson ? 'JSONを直接保存中…' : '保存中…';
   try {
-    await apiPost('/api/classify', { scenario_id: currentScenario.id, text });
+    if (entriesJson) {
+      // AI分類を通さず、貼られたJSONをそのままentriesとして保存する
+      entriesJson.forEach(e => { e.scenario_id = currentScenario.id; });
+      await apiPost('/api/entries', { entries: entriesJson });
+    } else {
+      await apiPost('/api/classify', { scenario_id: currentScenario.id, text });
+    }
     textarea.value = '';
     saveBtn.textContent = '保存しました';
   } catch (e) {
