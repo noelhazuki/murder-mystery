@@ -348,6 +348,15 @@
     border-radius: 14px;
     padding: 5px 10px;
   }
+  .scenario-delete-btn {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: #A23B3B;
+    background: none;
+    border: 1px solid #E0BDBD;
+    border-radius: 14px;
+    padding: 5px 10px;
+  }
   .modal-new-btn {
     display: block;
     width: 100%;
@@ -564,6 +573,12 @@
     return res.json();
   }
 
+  async function apiDelete(path) {
+    const res = await fetch(API_BASE + path, { method: 'DELETE' });
+    if (!res.ok) throw new Error('削除に失敗しました(' + res.status + ')');
+    return res.json();
+  }
+
   async function loadScenarios() {
     const data = await apiGet('/api/scenarios');
     return extractList(data);
@@ -604,6 +619,7 @@
           <button class="scenario-select-btn" data-id="${s.id}">${escapeHtml(s.title || '(無題)')}</button>
           ${isCurrent ? '<span class="scenario-current-mark">選択中</span>' : ''}
           <button class="scenario-rename-btn" data-rename="${s.id}">リネーム</button>
+          <button class="scenario-delete-btn" data-delete="${s.id}">削除</button>
         </div>
       `;
     }).join('');
@@ -639,6 +655,39 @@
             const updated = scenarios.find(s => s.id === target.id);
             if (updated) setCurrentScenario(updated);
           }
+        } catch (e) {
+          showModalError(e.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    slot.querySelectorAll('.scenario-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const target = scenarios.find(s => s.id === btn.dataset.delete);
+        if (!target) return;
+        const sure = window.confirm(
+          '「' + (target.title || '(無題)') + '」を削除します。\n中の証拠・人物・場所などの記録も全て消えます。この操作は元に戻せません。\n本当によろしいですか?'
+        );
+        if (!sure) return;
+        btn.disabled = true;
+        showModalError('');
+        try {
+          await apiDelete('/api/scenarios/' + encodeURIComponent(target.id));
+          scenarios = await loadScenarios();
+
+          if (currentScenario && currentScenario.id === target.id) {
+            if (scenarios.length > 0) {
+              setCurrentScenario(scenarios[0]);
+            } else {
+              const name = nextUntitledName([]);
+              await apiPost('/api/scenarios', { title: name });
+              scenarios = await loadScenarios();
+              setCurrentScenario(scenarios[0]);
+            }
+          }
+          renderScenarioList();
         } catch (e) {
           showModalError(e.message);
         } finally {
