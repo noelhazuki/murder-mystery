@@ -286,6 +286,20 @@
   }
   .cat-item-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
   .cat-item-related { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; }
+  .cat-item-related .auto-link {
+    color: var(--accent-deep);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .cat-item-related .auto-link:active { opacity: 0.6; }
+  .cat-item.flash { animation: catItemFlash 1.2s ease; }
+  @keyframes catItemFlash {
+    0% { background: #D8E0F5; }
+    100% { background: #FBF8EE; }
+  }
 
   /* 右端から飛び出す索引タブ */
   .side-tabs {
@@ -547,6 +561,43 @@
     return div.innerHTML;
   }
 
+  // DB登録済みの名前だけをクリッカブルにする(未登録の単語は平文のまま)
+  function autoLinkText(text, excludeId) {
+    if (!text) return '';
+    const candidates = entriesCache
+      .filter(e => e.id !== excludeId && e.title && e.title.trim().length > 0)
+      .sort((a, b) => b.title.length - a.title.length); // 長い名前を優先(部分一致の衝突防止)
+
+    let matches = [];
+    candidates.forEach(c => {
+      let idx = text.indexOf(c.title);
+      while (idx !== -1) {
+        matches.push({ start: idx, end: idx + c.title.length, entry: c });
+        idx = text.indexOf(c.title, idx + 1);
+      }
+    });
+    // 範囲が被っているものは、より長くマッチした方を優先して残す
+    matches.sort((a, b) => (b.end - b.start) - (a.end - a.start));
+    const used = [];
+    matches = matches.filter(m => {
+      const overlap = used.some(u => m.start < u.end && m.end > u.start);
+      if (overlap) return false;
+      used.push(m);
+      return true;
+    });
+    matches.sort((a, b) => a.start - b.start);
+
+    let html = '';
+    let pos = 0;
+    matches.forEach(m => {
+      html += escapeHtml(text.slice(pos, m.start));
+      html += `<span class="auto-link" data-id="${m.entry.id}" data-category="${m.entry.category}">${escapeHtml(text.slice(m.start, m.end))}</span>`;
+      pos = m.end;
+    });
+    html += escapeHtml(text.slice(pos));
+    return html;
+  }
+
   function renderCategoryView() {
     const slot = document.getElementById('category-content');
     const items = entriesCache.filter(e => e.category === currentCategory);
@@ -555,9 +606,9 @@
       return;
     }
     slot.innerHTML = items.map(e => `
-      <div class="cat-item">
+      <div class="cat-item" data-id="${e.id}">
         <div class="cat-item-name">${escapeHtml(e.title)}</div>
-        ${e.body ? `<div class="cat-item-related">${escapeHtml(e.body)}</div>` : ''}
+        ${e.body ? `<div class="cat-item-related">${autoLinkText(e.body, e.id)}</div>` : ''}
       </div>
     `).join('');
   }
@@ -583,6 +634,33 @@
       currentCategory = tab.dataset.category;
       renderCategoryView();
     });
+  });
+
+  // 自動リンクのタップ:該当カテゴリタブに切り替えて、その項目までスクロール&ハイライト
+  document.getElementById('category-content').addEventListener('click', (ev) => {
+    const link = ev.target.closest('.auto-link');
+    if (!link) return;
+    const targetId = link.dataset.id;
+    const targetCategory = link.dataset.category;
+
+    const jumpAndHighlight = () => {
+      const target = document.querySelector(`.cat-item[data-id="${targetId}"]`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('flash');
+      setTimeout(() => target.classList.remove('flash'), 1200);
+    };
+
+    if (targetCategory && targetCategory !== currentCategory) {
+      document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
+      const tabBtn = document.querySelector(`.side-tab[data-category="${targetCategory}"]`);
+      if (tabBtn) tabBtn.classList.add('active');
+      currentCategory = targetCategory;
+      renderCategoryView();
+      requestAnimationFrame(jumpAndHighlight);
+    } else {
+      jumpAndHighlight();
+    }
   });
 
   // ---------- 時系列ビュー(API接続) ----------
@@ -656,7 +734,7 @@
               <button class="memo-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
             </div>
             <div class="memo-body">
-              <strong>${escapeHtml(e.title)}</strong>${e.body ? '　' + escapeHtml(e.body) : ''}
+              <strong>${escapeHtml(e.title)}</strong>${e.body ? '<br>' + escapeHtml(e.body) : ''}
             </div>
             ${followups}
             <button class="followup-add" data-id="${e.id}">+ 追記する</button>
