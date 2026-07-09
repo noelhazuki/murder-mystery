@@ -232,6 +232,39 @@
     background: none;
     border: none;
   }
+  .followup-input-row {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .followup-input-row input {
+    flex: 1;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 12.5px;
+    border: 1px solid #C9BFA0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: #FFFDF6;
+    color: var(--ink);
+  }
+  .followup-input-row button {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #FBF8EE;
+    background: var(--accent-deep);
+    border: none;
+    border-radius: 6px;
+    padding: 0 10px;
+  }
+  .chapter-divider {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--ink-soft);
+    margin: 22px 0 14px;
+  }
+  .chapter-divider:first-child { margin-top: 0; }
 
   /* ============ カテゴリ別ビュー + 右タブ ============ */
   .category-stage { display: flex; }
@@ -435,35 +468,14 @@
           <button class="save-btn">保存する</button>
         </div>
 
-        <!-- ============ 時系列ビュー(まだダミー・次のステップで接続) ============ -->
+        <!-- ============ 時系列ビュー(API接続) ============ -->
         <div class="view" id="timeline-view">
           <div class="timeline-controls">
-            <button class="order-toggle">↓ 新しい順</button>
+            <button class="order-toggle" id="timeline-order-toggle">↓ 新しい順</button>
           </div>
 
-          <div class="memo-card">
-            <div class="memo-meta">
-              <span class="memo-time">2026-07-09 21:03</span>
-              <button class="memo-star on">★</button>
-            </div>
-            <div class="memo-body">
-              書斎の机の下に <a href="#">血のついたナイフ</a> が落ちていた。
-              <a href="#">執事</a> がやけに慌てていたのが気になる。
-            </div>
-            <div class="memo-followup">
-              21:40追記:ナイフの柄に彫刻あり、屋敷の紋章と一致するかも。
-            </div>
-            <button class="followup-add">+ 追記する</button>
-          </div>
-
-          <div class="memo-card">
-            <div class="memo-meta">
-              <span class="memo-time">2026-07-09 21:15</span>
-              <button class="memo-star">★</button>
-            </div>
-            <div class="memo-body">
-              暖炉の中に燃え残った手紙。差出人の名前らしき単語があったが未確認のため今はリンクなし。
-            </div>
+          <div id="timeline-content">
+            <div class="modal-empty">読み込み中…</div>
           </div>
         </div>
 
@@ -515,6 +527,7 @@
     document.getElementById(tab.dataset.view).classList.add('active');
       localStorage.setItem('lastMainTab', tab.dataset.view);
       if (tab.dataset.view === 'category-view') refreshCategoryView();
+      if (tab.dataset.view === 'timeline-view') refreshTimelineView();
     });
   });
 
@@ -523,10 +536,6 @@
     const target = document.querySelector(`.main-tab[data-view="${lastTab}"]`);
     if (target) target.click();
   }
-
-  document.querySelectorAll('.memo-star').forEach(star => {
-    star.addEventListener('click', () => star.classList.toggle('on'));
-  });
 
   // ---------- カテゴリ別ビュー(API接続) ----------
   let entriesCache = [];
@@ -574,6 +583,174 @@
       currentCategory = tab.dataset.category;
       renderCategoryView();
     });
+  });
+
+  // ---------- 時系列ビュー(API接続) ----------
+  let timelineEntries = [];
+  let timelineOrder = 'desc'; // desc=新しい順 / asc=古い順
+
+  function formatDateTime(iso) {
+    if (!iso) return '';
+    // サーバーはUTCで保存しているので、端末のローカル時刻に変換して表示する
+    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+    if (isNaN(d.getTime())) return String(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function formatTimeOnly(iso) {
+    const full = formatDateTime(iso);
+    return full.split(' ')[1] || '';
+  }
+
+  function renderTimelineView() {
+    const slot = document.getElementById('timeline-content');
+    if (timelineEntries.length === 0) {
+      slot.innerHTML = '<div class="modal-empty">まだ何も登録されていません</div>';
+      return;
+    }
+
+    const byId = {};
+    timelineEntries.forEach(e => { byId[e.id] = e; });
+
+    const topLevel = timelineEntries.filter(e => !e.parent_id || !byId[e.parent_id]);
+
+    // 子・孫…すべての子孫を時系列順にフラットで集める(封筒→手紙→跡、のような多段入れ子対応)
+    const descendantsOf = rootId => {
+      const result = [];
+      const stack = timelineEntries.filter(e => e.parent_id === rootId);
+      while (stack.length) {
+        const e = stack.shift();
+        result.push(e);
+        timelineEntries.filter(c => c.parent_id === e.id).forEach(c => stack.push(c));
+      }
+      return result.sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
+    };
+
+    // 章ごとにグループ化
+    const chapterMap = new Map();
+    topLevel.forEach(e => {
+      const ch = e.chapter ?? 0;
+      if (!chapterMap.has(ch)) chapterMap.set(ch, []);
+      chapterMap.get(ch).push(e);
+    });
+
+    let chapters = Array.from(chapterMap.keys()).sort((a, b) => a - b);
+    if (timelineOrder === 'desc') chapters = chapters.reverse();
+
+    const html = chapters.map(ch => {
+      let items = chapterMap.get(ch).sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''));
+      if (timelineOrder === 'desc') items = items.slice().reverse();
+
+      const chapterLabel = ch > 0 ? `┈┈┈┈┈ 第${ch}章 ┈┈┈┈┈` : `┈┈┈┈┈ 章未設定 ┈┈┈┈┈`;
+
+      const cards = items.map(e => {
+        const followups = descendantsOf(e.id).map(c => `
+          <div class="memo-followup">${formatDateTime(c.updated_at)}追記:${escapeHtml(c.body || c.title)}</div>
+        `).join('');
+
+        return `
+          <div class="memo-card" data-id="${e.id}">
+            <div class="memo-meta">
+              <span class="memo-time">${formatDateTime(e.updated_at)}</span>
+              <button class="memo-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
+            </div>
+            <div class="memo-body">
+              <strong>${escapeHtml(e.title)}</strong>${e.body ? '　' + escapeHtml(e.body) : ''}
+            </div>
+            ${followups}
+            <button class="followup-add" data-id="${e.id}">+ 追記する</button>
+          </div>
+        `;
+      }).join('');
+
+      return `<div class="chapter-divider">${chapterLabel}</div>${cards}`;
+    }).join('');
+
+    slot.innerHTML = html;
+
+    // 星トグル
+    slot.querySelectorAll('.memo-star').forEach(btn => {
+      btn.addEventListener('click', () => toggleStar(btn.dataset.id, btn.dataset.starred === '1'));
+    });
+
+    // 追記ボタン
+    slot.querySelectorAll('.followup-add').forEach(btn => {
+      btn.addEventListener('click', () => showFollowupInput(btn));
+    });
+  }
+
+  function showFollowupInput(btn) {
+    const id = btn.dataset.id;
+    const row = document.createElement('div');
+    row.className = 'followup-input-row';
+    row.innerHTML = `
+      <input type="text" placeholder="追記する内容を入力…">
+      <button type="button">追加</button>
+    `;
+    btn.replaceWith(row);
+    const input = row.querySelector('input');
+    const saveBtn = row.querySelector('button');
+    input.focus();
+    saveBtn.addEventListener('click', () => submitFollowup(id, input.value.trim(), row));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitFollowup(id, input.value.trim(), row);
+    });
+  }
+
+  async function submitFollowup(parentId, text, row) {
+    if (!text) return;
+    const parent = timelineEntries.find(e => e.id === parentId);
+    if (!parent) return;
+    row.querySelector('button').disabled = true;
+    try {
+      await apiPost('/api/entries', {
+        entries: [{
+          scenario_id: currentScenario.id,
+          category: parent.category,
+          title: parent.title,
+          body: text,
+          parent_id: parent.id,
+          chapter: parent.chapter ?? null
+        }]
+      });
+      await refreshTimelineView();
+    } catch (e) {
+      console.error(e);
+      row.querySelector('button').disabled = false;
+    }
+  }
+
+  async function toggleStar(id, currentlyOn) {
+    const entry = timelineEntries.find(e => e.id === id);
+    if (entry) entry.starred = currentlyOn ? 0 : 1;
+    renderTimelineView();
+    try {
+      await apiPut('/api/entries/' + encodeURIComponent(id), { starred: currentlyOn ? 0 : 1 });
+    } catch (e) {
+      console.error(e);
+      await refreshTimelineView();
+    }
+  }
+
+  async function refreshTimelineView() {
+    if (!currentScenario) return;
+    const slot = document.getElementById('timeline-content');
+    slot.innerHTML = '<div class="modal-empty">読み込み中…</div>';
+    try {
+      const data = await apiGet('/api/entries?scenario_id=' + encodeURIComponent(currentScenario.id));
+      timelineEntries = extractList(data);
+      renderTimelineView();
+    } catch (e) {
+      slot.innerHTML = '<div class="modal-empty">読み込みに失敗しました</div>';
+      console.error(e);
+    }
+  }
+
+  document.getElementById('timeline-order-toggle').addEventListener('click', (e) => {
+    timelineOrder = timelineOrder === 'desc' ? 'asc' : 'desc';
+    e.target.textContent = timelineOrder === 'desc' ? '↓ 新しい順' : '↑ 古い順';
+    renderTimelineView();
   });
 
   // ---------- シナリオ管理(API接続) ----------
