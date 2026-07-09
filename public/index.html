@@ -20,6 +20,7 @@
     --accent-deep: #2C4685;
     --tab-off: #E4DDC8;
     --line: #E2DAC2;
+    --accent-red: #9C4A3A;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -280,7 +281,9 @@
     color: #fff;
     padding-right: 9px;
   }
-
+.side-tab.active.tab-red {
+    background: var(--accent-red);
+  }
   /* ============ シナリオ切替モーダル ============ */
   .modal-overlay {
     display: none;
@@ -460,33 +463,22 @@
           </div>
         </div>
 
-        <!-- ============ カテゴリ別ビュー(まだダミー・次のステップで接続) ============ -->
+        <!-- ============ カテゴリ別ビュー(API接続済み) ============ -->
         <div class="view" id="category-view">
           <div class="category-stage">
-            <div class="category-content">
-              <div class="cat-group-title">手がかり</div>
-              <div class="cat-item">
-                <div class="cat-item-name">血のついたナイフ</div>
-                <div class="cat-item-related">21:03 書斎の机の下から発見/紋章と一致の可能性</div>
-              </div>
-              <div class="cat-item">
-                <div class="cat-item-name">破れた手紙</div>
-                <div class="cat-item-related">21:15 暖炉の中で燃え残っていた</div>
-              </div>
+            <div class="category-content" id="category-content">
+              <div class="modal-empty">読み込み中…</div>
             </div>
             <div class="side-tabs">
-              <button class="side-tab active">手がかり</button>
-              <button class="side-tab">人物</button>
-              <button class="side-tab">推理</button>
-              <button class="side-tab">出来事</button>
+              <button class="side-tab active" data-category="evidence">証拠</button>
+              <button class="side-tab" data-category="person">人物</button>
+              <button class="side-tab" data-category="location">場所</button>
+              <button class="side-tab tab-red" data-category="reasoning">推理</button>
+              <button class="side-tab tab-red" data-category="fact">事実</button>
+              <button class="side-tab tab-red" data-category="question">疑問</button>
             </div>
           </div>
         </div>
-
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- ============ シナリオ切替モーダル ============ -->
 <div class="modal-overlay" id="switch-modal">
@@ -518,6 +510,7 @@
       tab.classList.add('active');
       document.getElementById(tab.dataset.view).classList.add('active');
       localStorage.setItem('lastMainTab', tab.dataset.view);
+      if (tab.dataset.view === 'category-view') refreshCategoryView();
     });
   });
 
@@ -531,10 +524,51 @@
     star.addEventListener('click', () => star.classList.toggle('on'));
   });
 
+  // ---------- カテゴリ別ビュー(API接続) ----------
+  let entriesCache = [];
+  let currentCategory = 'evidence';
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
+  }
+
+  function renderCategoryView() {
+    const slot = document.getElementById('category-content');
+    const items = entriesCache.filter(e => e.category === currentCategory);
+    if (items.length === 0) {
+      slot.innerHTML = '<div class="modal-empty">まだ何も登録されていません</div>';
+      return;
+    }
+    slot.innerHTML = items.map(e => `
+      <div class="cat-item">
+        <div class="cat-item-name">${escapeHtml(e.title)}</div>
+        ${e.body ? `<div class="cat-item-related">${escapeHtml(e.body)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function refreshCategoryView() {
+    if (!currentScenario) return;
+    const slot = document.getElementById('category-content');
+    slot.innerHTML = '<div class="modal-empty">読み込み中…</div>';
+    try {
+      const data = await apiGet('/api/entries?scenario_id=' + encodeURIComponent(currentScenario.id));
+      entriesCache = extractList(data);
+      renderCategoryView();
+    } catch (e) {
+      slot.innerHTML = '<div class="modal-empty">読み込みに失敗しました</div>';
+      console.error(e);
+    }
+  }
+
   document.querySelectorAll('.side-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
+      currentCategory = tab.dataset.category;
+      renderCategoryView();
     });
   });
 
