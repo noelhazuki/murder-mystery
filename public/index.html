@@ -1,1 +1,702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>事件簿 - マダミス管理</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
+  :root {
+    --desk: #242220;
+    --cover: #1B1A18;
+    --cover-edge: #322F2C;
+    --band: #100F0E;
+    --page: #F4EFE3;
+    --page-shadow: #E7E0CF;
+    --ink: #2A241D;
+    --ink-soft: #8C8272;
+    --accent: #3B5BA8;
+    --accent-deep: #2C4685;
+    --tab-off: #E4DDC8;
+    --line: #E2DAC2;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--desk);
+    background-image: radial-gradient(ellipse at 50% 0%, #2E2B27 0%, var(--desk) 70%);
+  }
+
+  body {
+    font-family: 'Noto Sans JP', sans-serif;
+    color: var(--ink);
+    padding: 16px 6px 30px;
+  }
+
+  /* ============ 手帳の外枠(表紙+ゴムバンド) ============ */
+  .notebook-wrap {
+    position: relative;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .cover-frame {
+    background: var(--cover);
+    border-radius: 16px;
+    padding: 6px 6px 10px;
+    box-shadow:
+      0 14px 30px rgba(0,0,0,0.45),
+      inset 0 0 0 1px var(--cover-edge);
+  }
+
+  /* 背表紙(左端のステッチ) */
+  .spine {
+    position: absolute;
+    left: 6px; top: 6px; bottom: 10px;
+    width: 10px;
+    background: linear-gradient(to right, #0D0C0B, #1B1A18);
+    border-radius: 16px 0 0 16px;
+    z-index: 2;
+  }
+  .spine::before {
+    content: '';
+    position: absolute;
+    left: 6px; top: 18px; bottom: 18px;
+    width: 0;
+    border-left: 1px dashed #4A4741;
+  }
+
+  /* ============ 紙面(実際のコンテンツ) ============ */
+  .page {
+    position: relative;
+    background: var(--page);
+    border-radius: 8px;
+    margin-left: 11px;
+    min-height: 640px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  }
+
+  /* ============ ヘッダー ============ */
+  .app-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid var(--line);
+    gap: 10px;
+  }
+  .scenario-title {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 0.01em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scenario-title .label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--ink-soft);
+    letter-spacing: 0.15em;
+    margin-bottom: 4px;
+  }
+  .switch-btn {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 11.5px;
+    color: var(--accent-deep);
+    background: none;
+    border: 1px solid #C9BFA0;
+    border-radius: 20px;
+    padding: 6px 13px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ============ メインタブ ============ */
+  .main-tabs {
+    display: flex;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .main-tab {
+    flex: 1;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    background: none;
+    border: none;
+    padding: 13px 4px 11px;
+    position: relative;
+  }
+  .main-tab.active { color: var(--ink); }
+  .main-tab.active::after {
+    content: '';
+    position: absolute;
+    left: 20%; right: 20%; bottom: -1px;
+    height: 3px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+  }
+
+  /* ============ 全体レイアウト ============ */
+  .stage { position: relative; display: flex; }
+  .view { flex: 1; padding: 18px 16px 24px; display: none; }
+  .view.active { display: block; }
+
+  /* ============ 入力タブ ============ */
+  .input-page textarea {
+    width: 100%;
+    min-height: 320px;
+    border: none;
+    background: transparent;
+    background-image: repeating-linear-gradient(
+      to bottom, transparent, transparent 26px, var(--line) 27px
+    );
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14.5px;
+    line-height: 27px;
+    color: var(--ink);
+    resize: vertical;
+    outline: none;
+  }
+  .input-page textarea::placeholder { color: #B7AD92; }
+  .save-btn {
+    display: block;
+    margin: 16px auto 4px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent-deep);
+    border: none;
+    border-radius: 9px;
+    padding: 12px 38px;
+    box-shadow: 0 3px 8px rgba(44,70,133,0.3);
+  }
+
+  /* ============ 時系列ビュー ============ */
+  .timeline-controls { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+  .order-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent-deep);
+    background: none;
+    border: 1px solid #C9BFA0;
+    border-radius: 14px;
+    padding: 5px 12px;
+  }
+  .memo-card {
+    background: #FBF8EE;
+    border-radius: 8px;
+    border-left: 3px solid var(--accent);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .memo-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .memo-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .memo-star { font-size: 15px; background: none; border: none; color: #D8CEB0; }
+  .memo-star.on { color: #B8862F; }
+  .memo-body { font-size: 14px; line-height: 1.8; }
+  .memo-body a {
+    color: var(--accent-deep);
+    font-weight: 700;
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--accent);
+  }
+  .memo-followup {
+    margin-top: 10px;
+    padding-top: 10px;
+    padding-left: 12px;
+    border-top: 1px dashed var(--line);
+    border-left: 2px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .followup-add {
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent-deep);
+    background: none;
+    border: none;
+  }
+
+  /* ============ カテゴリ別ビュー + 右タブ ============ */
+  .category-stage { display: flex; }
+  .category-content { flex: 1; padding-right: 6px; }
+  .cat-group-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--accent-deep);
+    margin: 18px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .cat-item {
+    background: #FBF8EE;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .cat-item-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .cat-item-related { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; }
+
+  /* 右端から飛び出す索引タブ */
+  .side-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding-top: 8px;
+    width: 30px;
+    margin-right: -22px;
+  }
+  .side-tab {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    letter-spacing: 3px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    background: var(--tab-off);
+    border: none;
+    padding: 12px 5px;
+    border-radius: 0 7px 7px 0;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.15);
+  }
+  .side-tab.active {
+    background: var(--accent-deep);
+    color: #fff;
+    padding-right: 9px;
+  }
+
+  /* ============ シナリオ切替モーダル ============ */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(16,15,14,0.55);
+    z-index: 50;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-sheet {
+    width: 100%;
+    max-width: 560px;
+    background: var(--page);
+    border-radius: 18px 18px 0 0;
+    padding: 18px 16px 26px;
+    max-height: 78vh;
+    overflow-y: auto;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.35);
+  }
+  .modal-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.05em;
+    margin-bottom: 14px;
+  }
+  .scenario-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #FBF8EE;
+    border-radius: 9px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    padding: 12px 12px;
+    margin-bottom: 9px;
+  }
+  .scenario-row.current {
+    box-shadow: inset 0 0 0 1.5px var(--accent-deep), 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .scenario-select-btn {
+    flex: 1;
+    text-align: left;
+    background: none;
+    border: none;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--ink);
+    padding: 2px 0;
+  }
+  .scenario-current-mark {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent-deep);
+    font-weight: 700;
+  }
+  .scenario-rename-btn {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--ink-soft);
+    background: none;
+    border: 1px solid #D8CEB0;
+    border-radius: 14px;
+    padding: 5px 10px;
+  }
+  .modal-new-btn {
+    display: block;
+    width: 100%;
+    margin-top: 14px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent-deep);
+    border: none;
+    border-radius: 9px;
+    padding: 13px;
+    box-shadow: 0 3px 8px rgba(44,70,133,0.3);
+  }
+  .modal-close-btn {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 13px;
+    color: var(--ink-soft);
+    background: none;
+    border: none;
+    padding: 8px;
+  }
+  .modal-empty {
+    font-size: 13px;
+    color: var(--ink-soft);
+    padding: 10px 2px 4px;
+  }
+  .modal-error {
+    font-size: 12.5px;
+    color: #A8442E;
+    background: #F6E4DE;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="notebook-wrap">
+  <div class="cover-frame">
+    <div class="spine"></div>
+    <div class="page">
+
+      <!-- ============ ヘッダー ============ -->
+      <div class="app-header">
+        <div class="scenario-title" id="scenario-title">
+          <span class="label">CASE FILE</span>
+          <span id="scenario-title-text">読み込み中…</span>
+        </div>
+        <button class="switch-btn" id="switch-open-btn">シナリオ切替</button>
+      </div>
+
+      <!-- ============ メインタブ ============ -->
+      <div class="main-tabs">
+        <button class="main-tab active" data-view="input-view">入力</button>
+        <button class="main-tab" data-view="timeline-view">時系列</button>
+        <button class="main-tab" data-view="category-view">カテゴリ別</button>
+      </div>
+
+      <div class="stage">
+
+        <!-- ============ 入力タブ ============ -->
+        <div class="view active input-page" id="input-view">
+          <textarea placeholder="気づいたこと、聞いた話、思ったことを自由に書いてください…"></textarea>
+          <button class="save-btn">保存する</button>
+        </div>
+
+        <!-- ============ 時系列ビュー(まだダミー・次のステップで接続) ============ -->
+        <div class="view" id="timeline-view">
+          <div class="timeline-controls">
+            <button class="order-toggle">↓ 新しい順</button>
+          </div>
+
+          <div class="memo-card">
+            <div class="memo-meta">
+              <span class="memo-time">2026-07-09 21:03</span>
+              <button class="memo-star on">★</button>
+            </div>
+            <div class="memo-body">
+              書斎の机の下に <a href="#">血のついたナイフ</a> が落ちていた。
+              <a href="#">執事</a> がやけに慌てていたのが気になる。
+            </div>
+            <div class="memo-followup">
+              21:40追記:ナイフの柄に彫刻あり、屋敷の紋章と一致するかも。
+            </div>
+            <button class="followup-add">+ 追記する</button>
+          </div>
+
+          <div class="memo-card">
+            <div class="memo-meta">
+              <span class="memo-time">2026-07-09 21:15</span>
+              <button class="memo-star">★</button>
+            </div>
+            <div class="memo-body">
+              暖炉の中に燃え残った手紙。差出人の名前らしき単語があったが未確認のため今はリンクなし。
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ カテゴリ別ビュー(まだダミー・次のステップで接続) ============ -->
+        <div class="view" id="category-view">
+          <div class="category-stage">
+            <div class="category-content">
+              <div class="cat-group-title">手がかり</div>
+              <div class="cat-item">
+                <div class="cat-item-name">血のついたナイフ</div>
+                <div class="cat-item-related">21:03 書斎の机の下から発見/紋章と一致の可能性</div>
+              </div>
+              <div class="cat-item">
+                <div class="cat-item-name">破れた手紙</div>
+                <div class="cat-item-related">21:15 暖炉の中で燃え残っていた</div>
+              </div>
+            </div>
+            <div class="side-tabs">
+              <button class="side-tab active">手がかり</button>
+              <button class="side-tab">人物</button>
+              <button class="side-tab">推理</button>
+              <button class="side-tab">出来事</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ シナリオ切替モーダル ============ -->
+<div class="modal-overlay" id="switch-modal">
+  <div class="modal-sheet">
+    <div class="modal-title">SWITCH SCENARIO / シナリオを選ぶ</div>
+    <div id="modal-error-slot"></div>
+    <div id="scenario-list-slot">
+      <div class="modal-empty">読み込み中…</div>
+    </div>
+    <button class="modal-new-btn" id="modal-new-btn">+ 新規作成</button>
+    <button class="modal-close-btn" id="modal-close-btn">閉じる</button>
+  </div>
+</div>
+
+<script>
+  const API_BASE = 'https://murder-mystery.noel-hazuki.workers.dev';
+
+  let scenarios = [];
+  let currentScenario = null;
+
+  // ---------- メインタブ切替(既存機能) ----------
+  const mainTabs = document.querySelectorAll('.main-tab');
+  const views = document.querySelectorAll('.view');
+
+  mainTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      mainTabs.forEach(t => t.classList.remove('active'));
+      views.forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.view).classList.add('active');
+      localStorage.setItem('lastMainTab', tab.dataset.view);
+    });
+  });
+
+  const lastTab = localStorage.getItem('lastMainTab');
+  if (lastTab) {
+    const target = document.querySelector(`.main-tab[data-view="${lastTab}"]`);
+    if (target) target.click();
+  }
+
+  document.querySelectorAll('.memo-star').forEach(star => {
+    star.addEventListener('click', () => star.classList.toggle('on'));
+  });
+
+  document.querySelectorAll('.side-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.side-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+
+  // ---------- シナリオ管理(API接続) ----------
+  function extractList(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.rows)) return data.rows;
+    if (data && Array.isArray(data.results)) return data.results;
+    if (data && Array.isArray(data.scenarios)) return data.scenarios;
+    return [];
+  }
+
+  async function apiGet(path) {
+    const res = await fetch(API_BASE + path);
+    if (!res.ok) throw new Error('取得に失敗しました(' + res.status + ')');
+    return res.json();
+  }
+
+  async function apiPost(path, body) {
+    const res = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('作成に失敗しました(' + res.status + ')');
+    return res.json();
+  }
+
+  async function loadScenarios() {
+    const data = await apiGet('/api/scenarios');
+    return extractList(data);
+  }
+
+  function nextUntitledName(list) {
+    const used = new Set();
+    list.forEach(s => {
+      const m = /^無題(\d+)$/.exec(s.title || '');
+      if (m) used.add(parseInt(m[1], 10));
+    });
+    let n = 1;
+    while (used.has(n)) n++;
+    return '無題' + n;
+  }
+
+  function setCurrentScenario(scenario) {
+    currentScenario = scenario;
+    localStorage.setItem('currentScenarioId', scenario.id);
+    document.getElementById('scenario-title-text').textContent = scenario.title || '(無題)';
+  }
+
+  function showModalError(msg) {
+    const slot = document.getElementById('modal-error-slot');
+    slot.innerHTML = msg ? `<div class="modal-error">${msg}</div>` : '';
+  }
+
+  function renderScenarioList() {
+    const slot = document.getElementById('scenario-list-slot');
+    if (scenarios.length === 0) {
+      slot.innerHTML = '<div class="modal-empty">まだシナリオがありません。「+ 新規作成」から始めてください。</div>';
+      return;
+    }
+    slot.innerHTML = scenarios.map(s => {
+      const isCurrent = currentScenario && s.id === currentScenario.id;
+      return `
+        <div class="scenario-row ${isCurrent ? 'current' : ''}">
+          <button class="scenario-select-btn" data-id="${s.id}">${escapeHtml(s.title || '(無題)')}</button>
+          ${isCurrent ? '<span class="scenario-current-mark">選択中</span>' : ''}
+          <button class="scenario-rename-btn" data-rename="${s.id}">リネーム</button>
+        </div>
+      `;
+    }).join('');
+
+    slot.querySelectorAll('.scenario-select-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = scenarios.find(s => s.id === btn.dataset.id);
+        if (target) {
+          setCurrentScenario(target);
+          closeModal();
+        }
+      });
+    });
+
+    slot.querySelectorAll('.scenario-rename-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        alert('リネーム機能は準備中です。もうすぐ使えるようになります。');
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function openModal() {
+    document.getElementById('switch-modal').classList.add('open');
+    showModalError('');
+    refreshScenarioList();
+  }
+
+  function closeModal() {
+    document.getElementById('switch-modal').classList.remove('open');
+  }
+
+  async function refreshScenarioList() {
+    try {
+      scenarios = await loadScenarios();
+      renderScenarioList();
+    } catch (e) {
+      showModalError(e.message);
+    }
+  }
+
+  document.getElementById('switch-open-btn').addEventListener('click', openModal);
+  document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+  document.getElementById('switch-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'switch-modal') closeModal();
+  });
+
+  document.getElementById('modal-new-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('modal-new-btn');
+    btn.disabled = true;
+    showModalError('');
+    try {
+      const name = nextUntitledName(scenarios);
+      await apiPost('/api/scenarios', { title: name });
+      scenarios = await loadScenarios();
+      const created = scenarios.find(s => s.title === name) || scenarios[scenarios.length - 1];
+      renderScenarioList();
+      if (created) {
+        setCurrentScenario(created);
+        closeModal();
+      }
+    } catch (e) {
+      showModalError(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- 初期化 ----------
+  async function init() {
+    try {
+      let list = await loadScenarios();
+      const savedId = localStorage.getItem('currentScenarioId');
+      let current = list.find(s => s.id === savedId);
+
+      if (!current) {
+        if (list.length === 0) {
+          const name = nextUntitledName([]);
+          await apiPost('/api/scenarios', { title: name });
+          list = await loadScenarios();
+        }
+        current = list[0];
+      }
+
+      scenarios = list;
+      if (current) {
+        setCurrentScenario(current);
+      } else {
+        document.getElementById('scenario-title-text').textContent = '(シナリオなし)';
+      }
+    } catch (e) {
+      document.getElementById('scenario-title-text').textContent = '読み込みエラー';
+      console.error(e);
+    }
+  }
+
+  init();
+</script>
+
+</body>
+</html>
