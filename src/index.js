@@ -47,6 +47,9 @@ export default {
       if (path === "/api/entries" && method === "GET") return await listEntries(env, url);
       if (path === "/api/entries" && method === "POST") return await upsertEntries(env, request);
 
+      // --- AI自動分類(バルクテキスト → entries) ---
+      if (path === "/api/classify" && method === "POST") return await handleClassify(env, request);
+
       const entryMatch = path.match(/^\/api\/entries\/([^/]+)$/);
       if (entryMatch && method === "PUT") return await updateEntry(env, entryMatch[1], request);
       if (entryMatch && method === "DELETE") return await deleteEntry(env, entryMatch[1]);
@@ -120,7 +123,12 @@ async function upsertEntries(env, request) {
   const body = await request.json();
   const entries = Array.isArray(body) ? body : body.entries;
   if (!Array.isArray(entries)) return json({ error: "entries array required" }, 400);
+  const results = await upsertEntriesCore(env, entries);
+  return json({ results });
+}
 
+// upsertEntriesの中身本体(HTTPリクエストに依存しない形。/api/classifyからも呼ぶ)
+async function upsertEntriesCore(env, entries) {
   const results = [];
   for (const e of entries) {
     if (!e.scenario_id || !e.category || !e.title) {
@@ -148,7 +156,7 @@ async function upsertEntries(env, request) {
     }
     results.push({ ok: true, id });
   }
-  return json({ results });
+  return results;
 }
 async function updateEntry(env, id, request) {
   const body = await request.json();
@@ -172,6 +180,106 @@ function genEntryId(category) {
   const rand = crypto.randomUUID().slice(0, 6).toUpperCase();
   return `${prefix}-${rand}`;
 }
+// ---------- AI自動分類 ----------
+
+function buildClassifyPrompt(scenarioId, existingEntries) {
+  const existingList = existingEntries.length === 0
+    ? "(まだ何も登録されていません)"
+    : existingEntries.map(e =>
+        `- id:${e.id} category:${e.category} title:${e.title} parent_id:${e.parent_id ?? "なし"} chapter:${e.chapter ?? "なし"} status:${e.status ?? "なし"}`
+      ).join("\n");
+
+  const maxChapter = existingEntries.reduce((m, e) => e.chapter && e.chapter > m ? e.chapter : m, 0);
+
+  return `あなたはマーダーミステリーのGM記録係です。プレイヤーから貼り付けられたセッションログのテキストを、以下のルールに従って構造化データ(entries)に分類してください。
+
+【カテゴリ】
+- evidence(証拠) / person(人物) / location(場所) / reasoning(推理) / fact(事実) / question(未解決の疑問)
+
+【分類ルール(必ず守ること)】
+1. 1つの事項につき1エントリーに分割する。複数の事項を1エントリーにまとめない。
+2. 既存entries一覧(下記)に同一の事項があれば、その既存のidをそのまま使う(新規idは発行しない)。新規事項の場合はidを省略する(サーバー側で自動採番される)。
+3. parent_idは、既存entries一覧に該当する親が実在する場合のみ設定する。親が存在するかどうか推測で新規に作らない。存在しなければnullにする。
+4. statusはcategoryがlocationまたはevidenceの場合のみ設定する。
+   - location: "unchecked" または "checked"
+   - evidence: "unchecked" または "checked_empty" または "checked_found"
+   - それ以外のcategoryではstatusは必ずnullにする。
+5. chapterは既存entriesの最大値(現在:${maxChapter})を基準にする。テキスト中に明確な章・場面の転換点がある場合のみ+1し、それ以外は既存の最大値をそのまま使う。
+6. bodyにはテキストの要約のみを書く。他のentryとの関連性の推測や示唆(例:「これは〇〇の伏線かもしれない」等)は絶対に書かない。プレイヤーの推理を妨げないこと。
+7. カテゴリやparent_idの判断に迷った場合は、より穏当(保守的)な方を選ぶこと。
+
+【既存entries一覧(scenario_id: ${scenarioId})】
+${existingList}
+
+【出力形式】
+以下のJSON形式のみを出力すること。前置き文・説明文・Markdownのコードブロック記号(\`\`\`)は一切つけないこと。
+
+{"entries": [{"id": "(既存の場合のみ)", "scenario_id": "${scenarioId}", "category": "evidence|person|location|reasoning|fact|question", "title": "短いタイトル", "body": "要約本文", "parent_id": "(あれば)", "status": "(evidence/locationのみ)", "chapter": 数値}]}`;
+}
+
+async function handleClassify(env, request) {
+  const body = await request.json();
+  const scenarioId = body.scenario_id;
+  const newText = body.text;
+  if (!scenarioId || !newText) return json({ error: "scenario_id and text required" }, 400);
+
+  const { results: existingEntries } = await env.DB.prepare(
+    `SELECT id, category, title, parent_id, chapter, status FROM entries WHERE scenario_id = ?`
+  ).bind(scenarioId).all();
+
+  const systemPrompt = buildClassifyPrompt(scenarioId, existingEntries);
+
+  let aiResponse;
+  try {
+    const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user", content: newText }]
+      })
+    });
+
+    if (!apiRes.ok) {
+      const errText = await apiRes.text();
+      return json({ error: "Claude API error", detail: errText }, 502);
+    }
+    aiResponse = await apiRes.json();
+  } catch (e) {
+    return json({ error: "Claude API呼び出しに失敗しました", detail: String(e) }, 502);
+  }
+
+  const rawText = (aiResponse.content || [])
+    .filter(b => b.type === "text")
+    .map(b => b.text)
+    .join("");
+
+  let parsed;
+  try {
+    const cleaned = rawText.replace(/```json|```/g, "").trim();
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    return json({ error: "AIの出力をJSONとして解釈できませんでした。もう一度貼り付け直してみてください。", raw: rawText }, 502);
+  }
+
+  const entries = Array.isArray(parsed) ? parsed : parsed.entries;
+  if (!Array.isArray(entries)) {
+    return json({ error: "AIの出力にentries配列が含まれていませんでした。", raw: rawText }, 502);
+  }
+
+  // scenario_idはサーバー側で強制的に揃える(AIの書き間違い対策)
+  for (const e of entries) e.scenario_id = scenarioId;
+
+  const results = await upsertEntriesCore(env, entries);
+  return json({ results, count: results.length });
+}
+
 // ---------- AI引き継ぎ要約生成 ----------
 
 const CATEGORY_LABEL = {
