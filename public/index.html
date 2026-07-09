@@ -263,27 +263,31 @@
     width: 30px;
     margin-right: -22px;
   }
-  .side-tab {
+.side-tab {
     writing-mode: vertical-rl;
     text-orientation: upright;
     letter-spacing: 3px;
     font-size: 11.5px;
     font-weight: 700;
-    color: var(--ink-soft);
-    background: var(--tab-off);
+    color: #fff;
+    background: var(--accent-deep);
     border: none;
     padding: 12px 5px;
     border-radius: 0 7px 7px 0;
     box-shadow: 2px 2px 5px rgba(0,0,0,0.15);
   }
+  .side-tab.tab-red {
+    background: var(--accent-red);
+  }
   .side-tab.active {
-    background: var(--accent-deep);
-    color: #fff;
+    background: #B9C7E9;
+    color: var(--accent-deep);
     padding-right: 9px;
   }
 .side-tab.active.tab-red {
-    background: var(--accent-red);
-  }
+    background: #E8C3B7;
+    color: var(--accent-red);
+}
   /* ============ シナリオ切替モーダル ============ */
   .modal-overlay {
     display: none;
@@ -508,9 +512,9 @@
       mainTabs.forEach(t => t.classList.remove('active'));
       views.forEach(v => v.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById(tab.dataset.view).classList.add('active');
+    document.getElementById(tab.dataset.view).classList.add('active');
       localStorage.setItem('lastMainTab', tab.dataset.view);
-      if (tab.dataset.view === 'category-view') refreshCategoryView();
+      if (tab.dataset.view === 'category-view') refreshCategoryView(););
     });
   });
 
