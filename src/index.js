@@ -140,18 +140,18 @@ async function upsertEntriesCore(env, entries) {
 
     if (existing) {
       await env.DB.prepare(
-        `UPDATE entries SET category=?, title=?, body=?, parent_id=?, status=?, chapter=?, deceased=?, updated_at=? WHERE id=?`
+        `UPDATE entries SET category=?, title=?, body=?, parent_id=?, status=?, chapter=?, life_status=?, updated_at=? WHERE id=?`
       ).bind(
         e.category, e.title, e.body ?? null, e.parent_id ?? null,
-        e.status ?? null, e.chapter ?? null, e.deceased ?? 0, nowIso(), id
+        e.status ?? null, e.chapter ?? null, e.life_status ?? null, nowIso(), id
       ).run();
     } else {
       await env.DB.prepare(
-        `INSERT INTO entries (id, scenario_id, category, title, body, parent_id, status, chapter, starred, deceased, updated_at)
+        `INSERT INTO entries (id, scenario_id, category, title, body, parent_id, status, chapter, starred, life_status, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).bind(
         id, e.scenario_id, e.category, e.title, e.body ?? null,
-        e.parent_id ?? null, e.status ?? null, e.chapter ?? null, e.deceased ?? 0, nowIso()
+        e.parent_id ?? null, e.status ?? null, e.chapter ?? null, e.life_status ?? null, nowIso()
       ).run();
     }
     results.push({ ok: true, id });
@@ -160,7 +160,7 @@ async function upsertEntriesCore(env, entries) {
 }
 async function updateEntry(env, id, request) {
   const body = await request.json();
-  const allowed = ["category", "title", "body", "parent_id", "status", "chapter", "starred", "deceased"];
+  const allowed = ["category", "title", "body", "parent_id", "status", "chapter", "starred", "life_status"];
   const keys = Object.keys(body).filter(k => allowed.includes(k));
   if (keys.length === 0) return json({ error: "no valid fields to update" }, 400);
 
@@ -186,7 +186,7 @@ function buildClassifyPrompt(scenarioId, existingEntries) {
   const existingList = existingEntries.length === 0
     ? "(まだ何も登録されていません)"
     : existingEntries.map(e =>
-        `- id:${e.id} category:${e.category} title:${e.title} parent_id:${e.parent_id ?? "なし"} chapter:${e.chapter ?? "なし"} status:${e.status ?? "なし"} deceased:${e.deceased ?? 0}`
+        `- id:${e.id} category:${e.category} title:${e.title} parent_id:${e.parent_id ?? "なし"} chapter:${e.chapter ?? "なし"} status:${e.status ?? "なし"} life_status:${e.life_status ?? "なし"}`
       ).join("\n");
 
   const maxChapter = existingEntries.reduce((m, e) => e.chapter && e.chapter > m ? e.chapter : m, 0);
@@ -208,7 +208,7 @@ function buildClassifyPrompt(scenarioId, existingEntries) {
 5. chapterは既存entriesの最大値(現在:${maxChapter})を基準にする。テキスト中に明確な章・場面の転換点がある場合のみ+1し、それ以外は既存の最大値をそのまま使う。
 6. bodyにはテキストの要約のみを書く。他のentryとの関連性の推測や示唆(例:「これは〇〇の伏線かもしれない」等)は絶対に書かない。プレイヤーの推理を妨げないこと。
 7. カテゴリやparent_idの判断に迷った場合は、より穏当(保守的)な方を選ぶこと。
-8. deceasedはcategoryがpersonの場合のみ意味を持つ。その人物が死亡していることが、疑いようのない確定事実としてテキスト中に明記されている場合のみ1にする。「死んだかもしれない」「遺体が発見されたが本人かは不明」など、まだ疑わしい・未確定の段階では0のままにし、その疑惑はcategory:questionのentryとして別途起票すること(person側は書き換えない)。personカテゴリ以外ではdeceasedは常に0にする。
+8. life_statusはcategoryがpersonの場合のみ意味を持つ。「死亡」または「行方不明」であることが、疑いようのない確定事実としてテキスト中に明記されている場合のみ、それぞれ"deceased"または"missing"を設定する。「死んだかもしれない」「遺体が発見されたが本人かは不明」「消息を絶っている(生死不明)」など、まだ疑わしい・未確定の段階ではnullのままにし、その疑惑はcategory:questionのentryとして別途起票すること(person側は書き換えない)。personカテゴリ以外ではlife_statusは常にnullにする。
 
 【既存entries一覧(scenario_id: ${scenarioId})】
 ${existingList}
@@ -216,7 +216,7 @@ ${existingList}
 【出力形式】
 以下のJSON形式のみを出力すること。前置き文・説明文・Markdownのコードブロック記号(\`\`\`)は一切つけないこと。
 
-{"entries": [{"id": "(既存の場合のみ)", "scenario_id": "${scenarioId}", "category": "evidence|person|location|reasoning|fact|question", "title": "短いタイトル", "body": "要約本文", "parent_id": "(あれば)","status": "(evidence/location/personのみ)", "chapter": 数値, "deceased": "(personのみ。0または1。死亡が確定事実の場合のみ1)"}]}`;
+{"entries": [{"id": "(既存の場合のみ)", "scenario_id": "${scenarioId}", "category": "evidence|person|location|reasoning|fact|question", "title": "短いタイトル", "body": "要約本文", "parent_id": "(あれば)","status": "(evidence/location/personのみ)", "chapter": 数値, "life_status": "(personのみ。'deceased'/'missing'/null。確定事実の場合のみ設定)"}]}`;
 }
 
 async function handleClassify(env, request) {
@@ -226,7 +226,7 @@ async function handleClassify(env, request) {
   if (!scenarioId || !newText) return json({ error: "scenario_id and text required" }, 400);
 
   const { results: existingEntries } = await env.DB.prepare(
-    `SELECT id, category, title, parent_id, chapter, status, deceased FROM entries WHERE scenario_id = ?`
+    `SELECT id, category, title, parent_id, chapter, status, life_status FROM entries WHERE scenario_id = ?`
   ).bind(scenarioId).all();
 
   const systemPrompt = buildClassifyPrompt(scenarioId, existingEntries);
@@ -316,7 +316,8 @@ async function handleSummary(url, env) {
     } else {
       rows.forEach(r => {
         const statusPart = r.status ? `[${r.status}] ` : "";
-        lines.push(`・${statusPart}${r.title}${r.body ? "：" + r.body : ""}`);
+        const lifePart = r.life_status === "deceased" ? "[死亡] " : r.life_status === "missing" ? "[行方不明] " : "";
+        lines.push(`・${statusPart}${lifePart}${r.title}${r.body ? "：" + r.body : ""}`);
       });
     }
     lines.push("");
