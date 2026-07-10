@@ -689,8 +689,8 @@
           <div class="cat-item-name">${escapeHtml(e.title)}</div>
           <div class="cat-item-actions">
             ${lifeStatusHtml(e)}
-            <button class="memo-star cat-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
             ${statusButtonHtml(e)}
+            <button class="memo-star cat-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
           </div>
         </div>
         ${e.body ? `<div class="cat-item-related">${autoLinkText(e.body, e.id)}</div>` : ''}
