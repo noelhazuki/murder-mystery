@@ -246,7 +246,7 @@ async function handleClassify(env, request) {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: systemPrompt,
         messages: [{ role: "user", content: newText }]
       })
@@ -271,7 +271,11 @@ async function handleClassify(env, request) {
     const cleaned = rawText.replace(/```json|```/g, "").trim();
     parsed = JSON.parse(cleaned);
   } catch (e) {
-    return json({ error: "AIの出力をJSONとして解釈できませんでした。もう一度貼り付け直してみてください。", raw: rawText }, 502);
+    const truncated = aiResponse.stop_reason === "max_tokens";
+    const msg = truncated
+      ? "貼り付けた内容が長すぎて、AIの出力が途中で打ち切られました。テキストを2〜3回に分けて貼り付け直してください。"
+      : "AIの出力をJSONとして解釈できませんでした。もう一度貼り付け直してみてください。";
+    return json({ error: msg, raw: rawText }, 502);
   }
 
   const entries = Array.isArray(parsed) ? parsed : parsed.entries;
