@@ -180,6 +180,16 @@
     padding: 12px 38px;
     box-shadow: 0 3px 8px rgba(44,70,133,0.3);
   }
+  .save-error {
+    display: none;
+    max-width: 420px;
+    margin: 10px auto 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--accent-red);
+    text-align: center;
+  }
+  .save-error.show { display: block; }
 
   /* ============ 時系列ビュー ============ */
   .timeline-controls { display: flex; justify-content: flex-end; margin-bottom: 12px; }
@@ -501,6 +511,7 @@
         <div class="view active input-page" id="input-view">
           <textarea placeholder="気づいたこと、聞いた話、思ったことを自由に書いてください…"></textarea>
           <button class="save-btn">保存する</button>
+          <div class="save-error" id="save-error"></div>
         </div>
 
         <!-- ============ 時系列ビュー(API接続) ============ -->
@@ -971,7 +982,11 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error('作成に失敗しました(' + res.status + ')');
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).error || ''; } catch (e) {}
+      throw new Error(detail || '作成に失敗しました(' + res.status + ')');
+    }
     return res.json();
   }
 
@@ -1010,10 +1025,13 @@ function tryParseEntriesJson(text) {
 async function handleSave() {
   const textarea = document.querySelector('.input-page textarea');
   const saveBtn = document.querySelector('.input-page .save-btn');
+  const errorBox = document.getElementById('save-error');
   const text = textarea.value.trim();
   if (!text || !currentScenario) return;
 
   saveBtn.disabled = true;
+  errorBox.classList.remove('show');
+  errorBox.textContent = '';
   const entriesJson = tryParseEntriesJson(text);
   saveBtn.textContent = entriesJson ? 'JSONを直接保存中…' : '保存中…';
   try {
@@ -1028,6 +1046,8 @@ async function handleSave() {
     saveBtn.textContent = '保存しました';
   } catch (e) {
     saveBtn.textContent = '保存に失敗しました';
+    errorBox.textContent = e.message || '原因不明のエラーです';
+    errorBox.classList.add('show');
     console.error(e);
   } finally {
     setTimeout(() => {
