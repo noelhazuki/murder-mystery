@@ -287,6 +287,8 @@
   .cat-item-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
   .cat-item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .cat-item-head .cat-item-name { margin-bottom: 0; flex: 1; }
+  .cat-item-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .cat-star { font-size: 16px; }
   .cat-status {
     flex-shrink: 0;
     font-family: 'Noto Sans JP', sans-serif;
@@ -303,6 +305,7 @@
   .cat-status-checked_empty { background: #E4D2C8; color: var(--accent-red); }
   .cat-status-checked_found,
   .cat-status-checked { background: var(--accent); color: #fff; }
+  .cat-life-status { font-size: 12px; font-weight: 700; color: var(--accent-red); flex-shrink: 0; }
   .cat-item-related { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; margin-top: 6px; }
   .auto-link {
     color: var(--accent-deep);
@@ -644,6 +647,15 @@
     return `<button class="cat-status cat-status-${current}" data-id="${e.id}" data-status="${current}">${cfg.label[current]}</button>`;
   }
 
+  const LIFE_STATUS_LABEL = { deceased: '死亡', missing: '行方不明' };
+
+  function lifeStatusHtml(e) {
+    if (e.category !== 'person') return '';
+    const label = LIFE_STATUS_LABEL[e.life_status];
+    if (!label) return '';
+    return `<span class="cat-life-status">${label}</span>`;
+  }
+
   function renderCategoryView() {
     const slot = document.getElementById('category-content');
     const items = entriesCache.filter(e => e.category === currentCategory);
@@ -655,11 +667,28 @@
       <div class="cat-item" data-id="${e.id}">
         <div class="cat-item-head">
           <div class="cat-item-name">${escapeHtml(e.title)}</div>
-          ${statusButtonHtml(e)}
+          <div class="cat-item-actions">
+            ${lifeStatusHtml(e)}
+            <button class="memo-star cat-star ${e.starred ? 'on' : ''}" data-id="${e.id}" data-starred="${e.starred ? 1 : 0}">★</button>
+            ${statusButtonHtml(e)}
+          </div>
         </div>
         ${e.body ? `<div class="cat-item-related">${autoLinkText(e.body, e.id)}</div>` : ''}
       </div>
     `).join('');
+  }
+
+  // カテゴリ別ビュー側の★トグル(時系列側のtoggleStarとは別カウンター:entriesCacheを更新)
+  async function toggleStarCategory(id, currentlyOn) {
+    const entry = entriesCache.find(e => e.id === id);
+    if (entry) entry.starred = currentlyOn ? 0 : 1;
+    renderCategoryView();
+    try {
+      await apiPut('/api/entries/' + encodeURIComponent(id), { starred: currentlyOn ? 0 : 1 });
+    } catch (e) {
+      console.error(e);
+      await refreshCategoryView();
+    }
   }
 
   // ステータスバッジをタップして次の状態へ巡回させる(押すたびに未確認→空振り→発見→未確認…と循環)
@@ -705,6 +734,11 @@
 
   // 自動リンクのタップ:該当カテゴリタブに切り替えて、その項目までスクロール&ハイライト
   document.getElementById('category-content').addEventListener('click', (ev) => {
+    const starBtn = ev.target.closest('.cat-star');
+    if (starBtn) {
+      toggleStarCategory(starBtn.dataset.id, starBtn.dataset.starred === '1');
+      return;
+    }
     const statusBtn = ev.target.closest('.cat-status');
     if (statusBtn) {
       toggleStatus(statusBtn.dataset.id, statusBtn.dataset.status);
