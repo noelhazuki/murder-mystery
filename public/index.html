@@ -315,7 +315,16 @@
   .cat-status-checked_empty { background: #E4D2C8; color: var(--accent-red); }
   .cat-status-checked_found,
   .cat-status-checked { background: var(--accent); color: #fff; }
-  .cat-life-status { font-size: 12px; font-weight: 700; color: var(--accent-red); flex-shrink: 0; }
+  .cat-life-status {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 20px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .cat-life-status-deceased { background: var(--accent-red); }
+  .cat-life-status-missing { background: #8C8272; }
   .cat-item-related { font-size: 12.5px; color: var(--ink-soft); line-height: 1.7; margin-top: 6px; }
   .auto-link {
     color: var(--accent-deep);
@@ -664,7 +673,7 @@
     if (e.category !== 'person') return '';
     const label = LIFE_STATUS_LABEL[e.life_status];
     if (!label) return '';
-    return `<span class="cat-life-status">${label}</span>`;
+    return `<span class="cat-life-status cat-life-status-${e.life_status}">${label}</span>`;
   }
 
   function renderCategoryView() {
